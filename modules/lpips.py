@@ -119,6 +119,19 @@ class LPIPS(nn.Module):
     def load_checkpoint(self, path_to_checkpoint: str):
         self.load_state_dict(torch.load(path_to_checkpoint, weights_only=True))
 
+    def forward_vgg(self, x: torch.Tensor):
+        return_outputs: dict[str, torch.Tensor] = {}
+        slice_out = x
+        for i in range(len(self.layer_groups)):
+            slice_out = self.slices[f"slice{i + 1}_layers"](slice_out)
+            return_outputs[f"slice{i + 1}"] = slice_out
+        return return_outputs
+
 
 if __name__ == "__main__":
-    md = LPIPS()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    md = LPIPS().to(device)
+    tr = torch.randn(3, 256, 256, device=device)
+    out = md.forward_vgg(tr)
+    for key, v in out.items():
+        print(key, v.shape)
