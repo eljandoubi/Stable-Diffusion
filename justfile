@@ -14,6 +14,10 @@ venv:
 install:
     uv pip install -r requirements.txt
 
+# Initialize projetct
+init:
+    uv init
+
 # sync the environement
 sync:
     uv sync
