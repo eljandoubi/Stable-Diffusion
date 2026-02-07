@@ -127,11 +127,69 @@ class LPIPS(nn.Module):
             return_outputs[f"slice{i + 1}"] = slice_out
         return return_outputs
 
+    def scale(self, x: torch.Tensor) -> torch.Tensor:
+        return (x - self.mean) / self.std
+
+    def unit_norm(self, x: torch.Tensor, eps: float = 1e-8):
+
+        ### Normalize across the channel for every pixel ###
+        norm = torch.norm(x, p=2, dim=1, keepdim=True) + eps
+
+        ### Unit Norm ##
+        x = x / norm
+
+        return x
+
+    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+
+        ### If our Images are [0,1], scale to [-1,1] ###
+        if self.img_range != "minus_one_to_one":
+            input = input * 2 - 1
+            target = target * 2 - 1
+
+        ### Normalize Inputs ###
+        input, target = self.scale(input), self.scale(target)
+
+        ### Grab VGG Features ###
+        if not self.train_backbone:
+            with torch.no_grad():
+                input_vgg = self.forward_vgg(input)
+                target_vgg = self.forward_vgg(target)
+        else:
+            input_vgg = self.forward_vgg(input)
+            target_vgg = self.forward_vgg(target)
+
+        ### Loop Through the Slices ###
+
+        result = 0
+        for key, input_feat in input_vgg.items():
+            ### Grab Cooresponding Features ###
+            target_feat = target_vgg[key]
+
+            ### Unit Normalize the Tensors ###
+            input_feat = self.unit_norm(input_feat)
+            target_feat = self.unit_norm(target_feat)
+
+            ### Compute the Square Error ###
+            delta = (input_feat - target_feat) ** 2
+
+            ### Pass through Corresponding Proj Layer ###
+            proj_out = self.proj[f"{key}_conv_proj"](delta)
+
+            ### Average Pooling ###
+            pooled_out = self.pool(proj_out)
+            ### Accumulate the Outputs Across Layers ###
+            ### pooled has shape (B,1,1,1) so we can simply use convolutions
+            result += pooled_out
+
+        return result
+
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     md = LPIPS().to(device)
-    tr = torch.randn(3, 256, 256, device=device)
-    out = md.forward_vgg(tr)
-    for key, v in out.items():
-        print(key, v.shape)
+    b = 7
+    inp = torch.randn(b, 3, 256, 256, device=device)
+    tr = torch.randn(b, 3, 256, 256, device=device)
+    out = md(inp, tr)
+    print(out.shape)
