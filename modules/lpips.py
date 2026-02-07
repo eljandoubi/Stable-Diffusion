@@ -185,11 +185,58 @@ class LPIPS(nn.Module):
         return result
 
 
+class DiffToLogits(nn.Module):
+    """
+    The output of LPIPS is a tensor of shape (B,1,1,1). This class takes in
+    two differences from LPIPS: (ref vs p0) and (ref vs p1)
+
+    We then compute some features from those differences:
+        - diff1 (ref vs p0)
+        - diff2 (ref vs p1)
+        - difference: (diff_0 vs diff_1) -> Difference of Differences
+        - ratio1: Ratio of diff1/diff2
+        - ratio2: Ratio of diff2/diff1
+
+    We can then concat all these features, providing us 5 features of differences
+
+    """
+
+    def __init__(self, middle_channels: int = 32):
+
+        super(DiffToLogits, self).__init__()
+
+        self.model = nn.Sequential(
+            nn.Conv2d(5, middle_channels, kernel_size=1, stride=1, padding=0),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(
+                middle_channels, middle_channels, kernel_size=1, stride=1, padding=0
+            ),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(middle_channels, 1, kernel_size=1, stride=1, padding=0),
+        )
+
+    def forward(
+        self, diff1: torch.Tensor, diff2: torch.Tensor, eps: float = 0.1
+    ) -> torch.Tensor:
+
+        ### Difference Feature ###
+        difference = diff1 - diff2
+
+        ### Ratio Features ###
+        ratio1 = diff1 / (diff2 + eps)
+        ratio2 = diff2 / (diff1 + eps)
+
+        ### Concat Features ([B,1,1,1], [B,1,1,1], ...) -> (B,5,1,1)###
+        concat = torch.cat([diff1, diff2, difference, ratio1, ratio2], dim=1)
+
+        return self.model(concat)
+
+
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    md = LPIPS().to(device)
+    md = DiffToLogits().to(device)
     b = 7
-    inp = torch.randn(b, 3, 256, 256, device=device)
-    tr = torch.randn(b, 3, 256, 256, device=device)
+    inp = torch.randn(b, 1, 1, 1, device=device)
+    tr = torch.randn(b, 1, 1, 1, device=device)
     out = md(inp, tr)
     print(out.shape)
