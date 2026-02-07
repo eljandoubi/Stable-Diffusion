@@ -1,9 +1,11 @@
+import os
+import warnings
 from typing import Literal, Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision.models import vgg16, VGG16_Weights
-import warnings
+
 
 warnings.filterwarnings("ignore")
 
@@ -232,11 +234,92 @@ class DiffToLogits(nn.Module):
         return self.model(concat)
 
 
-if __name__ == "__main__":
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    md = DiffToLogits().to(device)
-    b = 7
-    inp = torch.randn(b, 1, 1, 1, device=device)
-    tr = torch.randn(b, 1, 1, 1, device=device)
-    out = md(inp, tr)
-    print(out.shape)
+class LPIPSForTraining(nn.Module):
+    """
+    LPIPS + DiffToLogits Prediction Head
+
+    Training LPIPS w/ VGG16 Backbone on Ranking Task on the BAPPS Dataset
+
+    Args:
+        - pretrained_backbone: Do you want to start with a Pretrained VGG16
+        - train_backbone: Do you want gradient updated on the VGG16?
+        - use_dropout: Do you want dropout layers before channel projections
+        - img_range: Are your images [-1 to 1] or [0 to 1]
+        - middle_channels: How many hidden channels in prediction head
+    """
+
+    def __init__(
+        self,
+        pretrained_backbone: bool = True,
+        train_backbone: bool = False,
+        use_dropout: bool = True,
+        img_range: Literal["zero_to_one", "minus_one_to_one"] = "minus_one_to_one",
+        middle_channels: int = 32,
+    ):
+
+        super(LPIPSForTraining, self).__init__()
+
+        self.lpips = LPIPS(
+            pretrained_backbone=pretrained_backbone,
+            train_backbone=train_backbone,
+            use_dropout=use_dropout,
+            img_range=img_range,
+        )
+
+        self.head = DiffToLogits(middle_channels=middle_channels)
+
+    def bce_rank_loss(
+        self, diff1: torch.Tensor, diff2: torch.Tensor, target: torch.Tensor
+    ):
+
+        ### Compute Logits comparing the differences ###
+        ### Outputs are in shape (B,1,1,1) ###
+        outputs = self.head(diff1, diff2)
+
+        ### Reshape Outputs to match targets for Loss ###
+        outputs = outputs.reshape(*target.shape)
+
+        ### Compute BCE Loss (labels between 0 and 1) ###
+        loss = F.binary_cross_entropy_with_logits(input=outputs, target=target)
+
+        return loss
+
+    def clamp_weights(self):
+
+        ### By enforcing non-negative weights on the linear layer w, LPIPS ensures that:
+        ###     - Larger differences in feature activations consistently contribute to
+        ###       a larger distance
+        ### If we have negative weights, then we could have a negative score
+        ### Therefore we ensure that the contribution of each pixel along the channel dimension
+        ### is either positive or zero (so we are positively accumulating differences)
+
+        ### This can be found at the end of page 13 in the paper: https://arxiv.org/pdf/1801.03924
+
+        for module in self.lpips.modules():
+            if hasattr(module, "weight") and module.kernel_size == (1, 1):
+                module.weight.data = torch.clamp(module.weight.data, min=0)
+
+    def checkpoint_model(self, path_to_checkpoint: str, checkpoint_name: str):
+
+        path_to_lpips = os.path.join(path_to_checkpoint, checkpoint_name)
+
+        ### We really only care about the lpips so just save that! ###
+        print(f"Saving Checkpoint to {path_to_lpips}")
+        torch.save(self.lpips.state_dict(), path_to_lpips)
+
+    def forward(
+        self,
+        img1: torch.Tensor,
+        img2: torch.Tensor,
+        ref: torch.Tensor,
+        target: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+
+        ### Compute LPIPS Difference Between Each Perturbed Image and Ref ###
+        diff1 = self.lpips(img1, ref)
+        diff2 = self.lpips(img2, ref)
+
+        ### Compute BCE Ranking Loss ###
+        loss = self.bce_rank_loss(diff1, diff2, target)
+
+        return loss, diff1, diff2

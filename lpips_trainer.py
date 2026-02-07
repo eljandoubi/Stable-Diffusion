@@ -93,7 +93,7 @@ class BAPPSDataset(Dataset):
             ]
         )
 
-    def _generate_dataset(self, path_to_dirs):
+    def _generate_dataset(self, path_to_dirs: list[str]) -> None:
 
         samples = []
         for dir in path_to_dirs:
@@ -119,10 +119,10 @@ class BAPPSDataset(Dataset):
 
         self.samples = samples
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.samples)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int):
 
         img1, img2, ref, target = self.samples[idx]
 
@@ -140,3 +140,8 @@ class BAPPSDataset(Dataset):
 if __name__ == "__main__":
     ds = BAPPSDataset("data/dataset/2afc")
     print(len(ds))
+    im1, im2, ref, tr = ds[0]
+    print(im1.shape)
+    print(im2.shape)
+    print(ref.shape)
+    print(type(tr), tr)
