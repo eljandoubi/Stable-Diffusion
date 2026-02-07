@@ -3,3 +3,5 @@
 torch
 torchvision
 accelerate
+kaggle
+python-dotenv

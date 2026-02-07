@@ -9,4 +9,4 @@ from PIL import Image
 import argparse
 from accelerate import Accelerator
 
-from modules import LPIPS, DiffToLogits
+from modules.lpips import LPIPS, DiffToLogits
