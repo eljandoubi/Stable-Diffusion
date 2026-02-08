@@ -1,19 +1,22 @@
-# Stable-Diffusion
-## EVALUATING LPIPS ON VALIDATION
-### Evaluating: LPIPS Reproduction
+# Stable Diffusion
 
-Dataset: CNN -> Accuracy: 0.826
-Dataset: TRADITIONAL -> Accuracy: 0.769
-Dataset: COLOR -> Accuracy: 0.623
-Dataset: DEBLUR -> Accuracy: 0.594
-Dataset: FRAMEINTERP -> Accuracy: 0.629
-Dataset: SUPERRES -> Accuracy: 0.694
+## LPIPS Evaluation on Validation Set
 
-### Evaluating: Original LPIPS
+This section reports validation accuracy for LPIPS across multiple datasets, comparing a reproduced implementation against the original LPIPS.
 
-Dataset: CNN -> Accuracy: 0.821
-Dataset: TRADITIONAL -> Accuracy: 0.732
-Dataset: COLOR -> Accuracy: 0.615
-Dataset: DEBLUR -> Accuracy: 0.594
-Dataset: FRAMEINTERP -> Accuracy: 0.622
-Dataset: SUPERRES -> Accuracy: 0.695
+### Results
+
+| Dataset        | LPIPS Reproduction | Original LPIPS |
+|---------------|-------------------:|---------------:|
+| CNN           | 0.826              | 0.821          |
+| TRADITIONAL   | 0.769              | 0.732          |
+| COLOR         | 0.623              | 0.615          |
+| DEBLUR        | 0.594              | 0.594          |
+| FRAMEINTERP   | 0.629              | 0.622          |
+| SUPERRES      | 0.694              | 0.695          |
+
+### Notes
+
+- The reproduced LPIPS closely matches the original implementation across all datasets.
+- Performance differences are minor and within expected variance.
+- Exact parity is observed on the **DEBLUR** dataset.
