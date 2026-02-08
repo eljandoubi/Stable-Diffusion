@@ -5,3 +5,4 @@ torchvision
 accelerate
 kaggle
 python-dotenv
+lpips
