@@ -3,15 +3,13 @@ import argparse
 from typing import Optional
 import numpy as np
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from PIL import Image
 from tqdm import tqdm
 from accelerate import Accelerator
 from dotenv import load_dotenv
-from modules.lpips import LPIPS, DiffToLogits
+from modules.lpips import LPIPSForTraining
 
 load_dotenv()
 
@@ -122,7 +120,9 @@ class BAPPSDataset(Dataset):
     def __len__(self) -> int:
         return len(self.samples)
 
-    def __getitem__(self, idx: int):
+    def __getitem__(
+        self, idx: int
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, np.float32]:
 
         img1, img2, ref, target = self.samples[idx]
 
@@ -137,6 +137,39 @@ class BAPPSDataset(Dataset):
         return img1, img2, ref, target
 
 
+class LRScheduler:
+    def __init__(
+        self,
+        optimizer: torch.optim.Optimizer,
+        initial_lr: float,
+        total_iterations: int,
+        decay_iterations: float,
+        min_lr: Optional[float] = None,
+    ):
+        self.optimizer = optimizer
+        self.initial_lr = initial_lr
+        self.total_iterations = total_iterations
+        self.decay_iterations = decay_iterations
+        self.constant_iterations = total_iterations - decay_iterations
+        self.min_lr = min_lr if min_lr is not None else 0
+        self.current_step = 0
+
+    def step(self):
+
+        if self.current_step < self.constant_iterations:
+            lr = self.initial_lr
+        else:
+            decay_ratio = (
+                self.current_step - self.constant_iterations
+            ) / self.decay_iterations
+            lr = max(self.min_lr, self.initial_lr * (1 - decay_ratio))
+
+        for param_group in self.optimizer.param_groups:
+            param_group["lr"] = lr
+
+        self.current_step += 1
+
+
 if __name__ == "__main__":
     ds = BAPPSDataset("data/dataset/2afc")
     print(len(ds))
@@ -144,4 +177,4 @@ if __name__ == "__main__":
     print(im1.shape)
     print(im2.shape)
     print(ref.shape)
-    print(type(tr), tr)
+    print(type(tr).__name__, tr)

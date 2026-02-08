@@ -296,7 +296,7 @@ class LPIPSForTraining(nn.Module):
         ### This can be found at the end of page 13 in the paper: https://arxiv.org/pdf/1801.03924
 
         for module in self.lpips.modules():
-            if hasattr(module, "weight") and module.kernel_size == (1, 1):
+            if isinstance(module, nn.Conv2d) and module.kernel_size == (1, 1):
                 module.weight.data = torch.clamp(module.weight.data, min=0)
 
     def checkpoint_model(self, path_to_checkpoint: str, checkpoint_name: str):
