@@ -170,6 +170,15 @@ class LRScheduler:
         self.current_step += 1
 
 
+def compute_accuracy(diff1, diff2, target):
+
+    preds = (diff2 < diff1).flatten().int()
+    target = target.flatten()
+    accuracy = torch.mean(preds * target + (1 - preds) * (1 - target))
+
+    return accuracy
+
+
 if __name__ == "__main__":
     ds = BAPPSDataset("data/dataset/2afc")
     print(len(ds))
