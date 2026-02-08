@@ -6,3 +6,4 @@ accelerate
 kaggle
 python-dotenv
 lpips
+img2dataset
