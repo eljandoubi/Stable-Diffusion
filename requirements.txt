@@ -7,3 +7,5 @@ kaggle
 python-dotenv
 lpips
 img2dataset
+transformers
+datasets
