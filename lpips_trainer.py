@@ -1,4 +1,5 @@
 import os
+import json
 import argparse
 from typing import Optional
 
@@ -252,11 +253,16 @@ def trainer(args: argparse.Namespace):
 
     ### Start Training ###
     iterations = 0
+    progress_bar = tqdm(
+        total=total_training_iterations,
+        desc="Training LPIPS",
+        disable=not accelerator.is_main_process,
+    )
 
     while iterations < total_training_iterations:
         for batch in trainloader:
             ### Grab Image Options 1/2, the Reference Image, and the Target ###
-            img1, img2, ref, target = (t.to(accelerator.device) for t in batch)
+            img1, img2, ref, target = batch
 
             ### Compute Loss and Store our Diffs from LPIPS ###]
             loss, diff1, diff2 = model(img1, img2, ref, target)
@@ -278,6 +284,7 @@ def trainer(args: argparse.Namespace):
 
             ### Count Iterations ###
             iterations += 1
+            progress_bar.update()
 
             if iterations % args.logging_steps == 0:
                 accuracy = compute_accuracy(diff1, diff2, target)
@@ -291,8 +298,8 @@ def trainer(args: argparse.Namespace):
                     "accuracy": round(accuracy * 100, 2),
                     "lr": optimizer.param_groups[0]["lr"],
                 }
-
-                accelerator.print(log)
+                if accelerator.is_main_process:
+                    tqdm.write(json.dumps(log, indent=4))
 
     ### Checkpoint Model ###
     accelerator.unwrap_model(model).checkpoint_model(
@@ -354,7 +361,7 @@ def eval(args: argparse.Namespace):
             accs = []
             for batch in loader:
                 ### Grab Batch ###
-                img1, img2, ref, target = batch
+                img1, img2, ref, target = (t.to(accelerator.device) for t in batch)
 
                 ### Compute Diffs between Images and Refs ###
                 with torch.no_grad():
@@ -482,21 +489,18 @@ if __name__ == "__main__":
         "--evaluation_only",
         action=argparse.BooleanOptionalAction,
         default=False,
-        type=bool,
     )
 
     parser.add_argument(
         "--eval_lpips_pkg",
         action=argparse.BooleanOptionalAction,
         default=False,
-        type=bool,
     )
 
     parser.add_argument(
         "--mixed_precision",
         action=argparse.BooleanOptionalAction,
         default=False,
-        type=bool,
     )
 
     args = parser.parse_args()

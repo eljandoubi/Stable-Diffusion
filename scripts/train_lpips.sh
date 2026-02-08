@@ -1,5 +1,5 @@
 
-accelerate launch lpips_trainer.py \
+uv run accelerate launch --config_file config.yaml lpips_trainer.py \
   --path_to_root "data/bapps/2afc" \
   --work_dir "work_dir/lpips" \
   --checkpoint_name "lpips_64x64_vgg.pt" \
