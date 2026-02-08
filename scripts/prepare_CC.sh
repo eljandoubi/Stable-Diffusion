@@ -5,4 +5,5 @@ uv run prepare_CC.py --path_to_data_root data/GCC \
                   --cpu_batch_size 512 \
                   --gpu_batch_size 256 \
                   --num_cpu_workers 16 \
+                  --pre_encode_text \
                   --dtype bfloat16

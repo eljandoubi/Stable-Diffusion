@@ -208,6 +208,7 @@ if __name__ == "__main__":
         dataset = dataset.filter(
             lambda example: example["encoded_text"] is not None,
             num_proc=args.num_cpu_workers,
+            desc="filter non none encoded text",
         )
 
     ### Final Dataset ###
