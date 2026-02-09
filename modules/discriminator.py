@@ -65,7 +65,7 @@ class PatchGAN(nn.Module):
 
         self.model = nn.Sequential(*layers)
 
-    def forward(self, input):
+    def forward(self, input: torch.Tensor):
         return self.model(input)
 
 
