@@ -1,5 +1,5 @@
 export NO_ALBUMENTATIONS_UPDATE=1
-img2dataset --url_list data/Train_GCC-training_with_head.tsv \
+uv run img2dataset --url_list data/Train_GCC-training_with_head.tsv \
             --input_format "tsv"\
             --url_col "url" \
             --caption_col "caption" \
