@@ -216,3 +216,125 @@ class VAEAttentionResidualBlock(nn.Module):
             x = res(x, time_embed)
 
         return x
+
+
+class VAEEncoder(nn.Module):
+    """
+    Encoder for the Variational AutoEncoder
+
+    Args:
+        - in_channels: Number of input channels in our images
+        - out_channels: The latent dimension output of our encoder
+        - double_z: If we are doing VAE, we need Mean/Std channels, else we just need our output
+        - channels_per_block: How many starting channels in every block?
+        - residual_layers_per_block: How many ResidualBlocks in every EncoderBlock
+        - num_attention_layers: Number of Self-Attention layers stacked at end of encoder
+        - attention_residual_connections: Do you want to use attention residual connections
+        - dropout_p: What dropout probability do you want to use?
+        - groupnorm_groups: How many groups in your groupnorm
+        - norm_eps: Groupnorm eps
+        - downsample_factor: Every block downsamples by what proportion?
+        - downsample_kernel_size: What kernel size for downsampling?
+
+    """
+
+    def __init__(
+        self,
+        in_channels: int = 3,
+        out_channels: int = 4,
+        double_z: bool = True,
+        channels_per_block: tuple[int, ...] = (
+            128,
+            256,
+            512,
+            512,
+        ),  # Downsample Factor: 2^(len(channels_per_block) - 1)
+        residual_layers_per_block: int = 2,
+        num_attention_layers: int = 1,
+        attention_residual_connections: bool = True,
+        dropout_p: float = 0.0,
+        groupnorm_groups: int = 32,
+        norm_eps: float = 1e-6,
+        downsample_factor: int = 2,
+        downsample_kernel_size: int = 3,
+    ):
+
+        super(VAEEncoder, self).__init__()
+
+        self.in_channels = in_channels
+        self.latent_channels = out_channels
+        self.residual_layers_per_block = residual_layers_per_block
+        self.channels_per_block = channels_per_block
+
+        self.conv_in = nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=self.channels_per_block[0],
+            kernel_size=3,
+            stride=1,
+            padding=1,
+        )
+
+        self.encoder_blocks = nn.ModuleList()
+        i_final_block = len(self.channels_per_block) - 1
+        output_channels = self.channels_per_block[0]
+        for i, channels in enumerate(self.channels_per_block):
+            in_channels = output_channels
+            output_channels = channels
+
+            self.encoder_blocks.append(
+                EncoderBlock2D(
+                    in_channels=in_channels,
+                    out_channels=output_channels,
+                    dropout_p=dropout_p,
+                    groupnorm_groups=groupnorm_groups,
+                    norm_eps=norm_eps,
+                    num_residual_blocks=self.residual_layers_per_block,
+                    add_downsample=(i != i_final_block),
+                    downsample_factor=downsample_factor,
+                    downsample_kernel_size=downsample_kernel_size,
+                )
+            )
+
+        ### AttentionResidualBlock (No change in img size) ###
+        self.attn_block = VAEAttentionResidualBlock(
+            in_channels=self.channels_per_block[-1],
+            dropout_p=dropout_p,
+            num_layers=num_attention_layers,
+            groupnorm_groups=groupnorm_groups,
+            norm_eps=norm_eps,
+            attention_head_dim=self.channels_per_block[-1],
+            attention_residual_connection=attention_residual_connections,
+        )
+
+        ### Final Output Layers ###
+        self.out_norm = nn.GroupNorm(
+            num_channels=self.channels_per_block[-1],
+            num_groups=groupnorm_groups,
+            eps=1e-6,
+        )
+
+        conv_out_channels = (
+            2 * self.latent_channels if double_z else self.latent_channels
+        )
+
+        self.conv_out = nn.Conv2d(
+            self.channels_per_block[-1],
+            conv_out_channels,  # We want 4 latent channels (so 4 for mean and 4 for std)
+            kernel_size=3,
+            padding="same",
+        )
+
+    def forward(self, x: torch.Tensor):
+
+        x = self.conv_in(x)
+
+        for block in self.encoder_blocks:
+            x = block(x)
+
+        x = self.attn_block(x)
+
+        x = self.out_norm(x)
+        x = F.silu(x)
+        x = self.conv_out(x)
+
+        return x
