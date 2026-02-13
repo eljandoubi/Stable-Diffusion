@@ -26,6 +26,12 @@ class LDMConfig:
     vae_up_down_factor: int = 2
     vae_up_down_kernel_size: int = 3
 
+    ### Quantization Config ###
+    quantize: bool = False
+    codebook_size: int = 16384
+    vq_embed_dim: float = 4
+    commitment_beta: float = 0.25
+
     ### VAE Scaling (Variance Normalization for Diffusion) ###
     vae_scale_factor: float = None
 

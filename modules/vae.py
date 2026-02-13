@@ -464,7 +464,7 @@ class EncoderDecoder(nn.Module):
     to perform the VAE or VQVAE Task
     """
 
-    def __init__(self, config):
+    def __init__(self, config: LDMConfig):
 
         super(EncoderDecoder, self).__init__()
 
