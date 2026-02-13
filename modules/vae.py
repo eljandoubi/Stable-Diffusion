@@ -310,7 +310,7 @@ class VAEEncoder(nn.Module):
         self.out_norm = nn.GroupNorm(
             num_channels=self.channels_per_block[-1],
             num_groups=groupnorm_groups,
-            eps=1e-6,
+            eps=norm_eps,
         )
 
         conv_out_channels = (
@@ -338,3 +338,234 @@ class VAEEncoder(nn.Module):
         x = self.conv_out(x)
 
         return x
+
+
+class VAEDecoder(nn.Module):
+    """
+    Decoder for the Variational AutoEncoder
+
+    Args:
+        - in_channels: Number of input channels in our images
+        - out_channels: The latent dimension output of our encoder
+        - channels_per_block: How many starting channels in every block? (Need to Reverse)
+        - residual_layers_per_block: How many ResidualBlocks in every EncoderBlock
+        - num_attention_layers: Number of Self-Attention layers stacked at end of encoder
+        - attention_residual_connections: Do you want to use attention residual connections
+        - dropout_p: What dropout probability do you want to use?
+        - groupnorm_groups: How many groups in your groupnorm
+        - norm_eps: Groupnorm eps
+        - upsample_factor: Every block upsamples by what proportion?
+        - upsample_kernel_size: What kernel size for upsampling?
+
+    """
+
+    def __init__(
+        self,
+        in_channels: int = 3,
+        out_channels: int = 4,
+        channels_per_block: tuple[int, ...] = (
+            128,
+            256,
+            512,
+            512,
+        ),  # Upsample Factor: 2^(len(channels_per_block) - 1)
+        residual_layers_per_block: int = 2,
+        num_attention_layers: int = 1,
+        attention_residual_connections: bool = True,
+        dropout_p: float = 0.0,
+        groupnorm_groups: int = 32,
+        norm_eps: float = 1e-6,
+        upsample_factor: int = 2,
+        upsample_kernel_size: int = 3,
+    ):
+
+        super(VAEDecoder, self).__init__()
+
+        self.latent_channels = in_channels
+        self.out_channels = out_channels
+        self.residual_layers_per_block = residual_layers_per_block
+        self.channels_per_block = channels_per_block[::-1]
+
+        self.conv_in = nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=self.channels_per_block[0],
+            kernel_size=3,
+            stride=1,
+            padding=1,
+        )
+
+        ### AttentionResidualBlock (No change in img size) ###
+        self.attn_block = VAEAttentionResidualBlock(
+            in_channels=self.channels_per_block[0],
+            dropout_p=dropout_p,
+            num_layers=num_attention_layers,
+            groupnorm_groups=groupnorm_groups,
+            norm_eps=norm_eps,
+            attention_head_dim=self.channels_per_block[0],
+            attention_residual_connection=attention_residual_connections,
+        )
+
+        self.decoder_blocks = nn.ModuleList()
+
+        i_final_block = len(self.channels_per_block) - 1
+        output_channels = self.channels_per_block[0]
+        for i, channels in enumerate(self.channels_per_block):
+            in_channels = output_channels
+            output_channels = channels
+
+            self.decoder_blocks.append(
+                DecoderBlock2D(
+                    in_channels=in_channels,
+                    out_channels=output_channels,
+                    dropout_p=dropout_p,
+                    groupnorm_groups=groupnorm_groups,
+                    norm_eps=norm_eps,
+                    num_residual_blocks=self.residual_layers_per_block,
+                    add_upsample=(i != i_final_block),
+                    upsample_factor=upsample_factor,
+                    upsample_kernel_size=upsample_kernel_size,
+                )
+            )
+
+        ### Final Output Layers ###
+        self.out_norm = nn.GroupNorm(
+            num_channels=self.channels_per_block[-1],
+            num_groups=groupnorm_groups,
+            eps=norm_eps,
+        )
+
+        self.conv_out = nn.Conv2d(
+            self.channels_per_block[-1],
+            self.out_channels,
+            kernel_size=3,
+            padding="same",
+        )
+
+    def forward(self, x: torch.Tensor):
+
+        x = self.conv_in(x)
+
+        x = self.attn_block(x)
+
+        for block in self.decoder_blocks:
+            x = block(x)
+
+        x = self.out_norm(x)
+        x = F.silu(x)
+        x = self.conv_out(x)
+
+        return x
+
+
+class EncoderDecoder(nn.Module):
+    """
+    Putting the Encoder/Decoder together so we can pass it into another class
+    to perform the VAE or VQVAE Task
+    """
+
+    def __init__(self, config):
+
+        super(EncoderDecoder, self).__init__()
+
+        self.config = config
+
+        self.encoder = VAEEncoder(
+            in_channels=config.in_channels,
+            out_channels=config.latent_channels,
+            double_z=not config.quantize,
+            channels_per_block=config.vae_channels_per_block,
+            residual_layers_per_block=config.residual_layers_per_block,
+            num_attention_layers=config.attention_layers,
+            attention_residual_connections=config.attention_residual_connections,
+            dropout_p=config.dropout,
+            groupnorm_groups=config.groupnorm_groups,
+            norm_eps=config.norm_eps,
+            downsample_factor=config.vae_up_down_factor,
+            downsample_kernel_size=config.vae_up_down_kernel_size,
+        )
+
+        self.decoder = VAEDecoder(
+            in_channels=config.latent_channels,
+            out_channels=config.out_channels,
+            channels_per_block=config.vae_channels_per_block,
+            residual_layers_per_block=config.residual_layers_per_block + 1,
+            num_attention_layers=config.attention_layers,
+            attention_residual_connections=config.attention_residual_connections,
+            dropout_p=config.dropout,
+            groupnorm_groups=config.groupnorm_groups,
+            norm_eps=config.norm_eps,
+            upsample_factor=config.vae_up_down_factor,
+            upsample_kernel_size=config.vae_up_down_kernel_size,
+        )
+
+        encoder_out_channels = (
+            2 * config.latent_channels
+            if not config.quantize
+            else config.latent_channels
+        )
+        self.post_encoder_conv = (
+            nn.Conv2d(
+                encoder_out_channels, encoder_out_channels, kernel_size=1, stride=1
+            )
+            if config.post_encoder_latent_proj
+            else nn.Identity()
+        )
+        self.pre_decoder_conv = (
+            nn.Conv2d(
+                config.latent_channels, config.latent_channels, kernel_size=1, stride=1
+            )
+            if config.pre_decoder_latent_proj
+            else nn.Identity()
+        )
+
+    def forward_enc(self, x: torch.Tensor):
+        x = self.encoder(x)
+        x = self.post_encoder_conv(x)
+        return x
+
+    def forward_dec(self, x: torch.Tensor):
+        x = self.pre_decoder_conv(x)
+        x = self.decoder(x)
+        return x
+
+
+class VAE(EncoderDecoder):
+    """
+    Variational AutoEncoder as Described in Auto-Encoding Variational Bayes
+    https://arxiv.org/pdf/1312.6114
+
+        - forward method is for training our VAE
+        - encode/decode is scaled and is for Diffusion Training
+    """
+
+    def __init__(self, config):
+        super(VAE, self).__init__(config=config)
+
+        self.config = config
+
+    def sample_z(self, mu: torch.Tensor, logvar: torch.Tensor):
+
+        ### Compute sigma from logvar ###
+        sigma = torch.exp(0.5 * logvar)
+
+        ### Sample Standard Gaussian Noise ###
+        noise = torch.randn_like(sigma)
+
+        ### Reparameterization Trick ###
+        z = mu + sigma * noise
+
+        return z
+
+    def encode(self, x: torch.Tensor, return_stats: bool = False, scale_factor=None):
+
+        ### Encode to (B x 2*L x H x W) ###
+        encoded = self.forward_enc(x)
+
+        ### Chunk Channel Dimension for Mean and Log Var ###
+        mu, logvar = torch.chunk(encoded, chunks=2, dim=1)
+
+        ### Clamp Logvar so when we exponentiate later, no numerical instability ###
+        logvar = torch.clamp(logvar, min=-30.0, max=20.0)
+
+        ### Sample Noise from Predicted Distribution ###
+        z = self.sample_z(mu, logvar)
