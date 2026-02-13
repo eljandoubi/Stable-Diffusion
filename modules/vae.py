@@ -543,6 +543,11 @@ class VAE(EncoderDecoder):
 
         self.config = config
 
+        if self.config.vae_scale_factor is not None:
+            self.scale_factor = self.config.vae_scale_factor
+        else:
+            self.scale_factor = 1.0
+
     def sample_z(self, mu: torch.Tensor, logvar: torch.Tensor):
 
         ### Compute sigma from logvar ###
@@ -556,7 +561,12 @@ class VAE(EncoderDecoder):
 
         return z
 
-    def encode(self, x: torch.Tensor, return_stats: bool = False, scale_factor=None):
+    def encode(
+        self,
+        x: torch.Tensor,
+        return_stats: bool = False,
+        scale_factor: Optional[float] = None,
+    ):
 
         ### Encode to (B x 2*L x H x W) ###
         encoded = self.forward_enc(x)
@@ -569,3 +579,53 @@ class VAE(EncoderDecoder):
 
         ### Sample Noise from Predicted Distribution ###
         z = self.sample_z(mu, logvar)
+
+        if scale_factor is None:
+            scale_factor = self.scale_factor
+
+        z = z * scale_factor
+
+        output = {"posterior": z}
+
+        if return_stats:
+            output["mu"] = mu
+            output["logvar"] = logvar
+
+        return output
+
+    def decode(self, z: torch.Tensor, scale_factor: Optional[float] = None):
+
+        ### Unscale the Embeddings by the scale_factor ###
+        if scale_factor is None:
+            scale_factor = self.scale_factor
+
+        z = z / scale_factor
+
+        ### Decode Latent ###
+        x = self.forward_dec(z)
+
+        return x
+
+    def kl_loss(self, mean: torch.Tensor, logvar: torch.Tensor):
+
+        var = torch.exp(logvar)
+
+        ### Add the KL Loss Across the Channel, Height, Width ###
+        kl_loss = -0.5 * torch.sum(1 + logvar - mean**2 - var, dim=[1, 2, 3])
+
+        return kl_loss
+
+    def forward(self, x: torch.Tensor):
+
+        ### Encode and get Statistics ###
+        output = self.encode(x, return_stats=True)
+
+        ### Reconstruct w/ Decoder ###
+        reconstruction = self.forward_dec(output["posterior"])
+        output["reconstruction"] = reconstruction
+
+        ### Compute KL Loss ###
+        kl_loss = self.kl_loss(output["mu"], output["logvar"])
+        output["kl_loss"] = kl_loss
+
+        return output
