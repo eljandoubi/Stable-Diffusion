@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from .layers import ResidualBlock2D, UpSampleBlock2D, DownSampleBlock2D
 from .transformer import Attention
+from .config import LDMConfig
 
 
 class EncoderBlock2D(nn.Module):
@@ -538,7 +539,7 @@ class VAE(EncoderDecoder):
         - encode/decode is scaled and is for Diffusion Training
     """
 
-    def __init__(self, config):
+    def __init__(self, config: LDMConfig):
         super(VAE, self).__init__(config=config)
 
         self.config = config
