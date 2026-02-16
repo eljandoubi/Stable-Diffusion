@@ -21,7 +21,7 @@ class PatchGAN(nn.Module):
         super(PatchGAN, self).__init__()
 
         current_filters = start_dim
-        layers = nn.ModuleList([])
+        layers = nn.ModuleList()
 
         ### Projection from input_channels to start_dim ###
         layers.append(
