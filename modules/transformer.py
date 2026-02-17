@@ -250,6 +250,143 @@ class Attention(nn.Module):
         return attention_out
 
 
+class GEGLU(nn.Module):
+    """
+    GEGLU Activation as outlined here:
+    https://paperswithcode.com/method/geglu
+    """
+
+    def __init__(self, dim_in: int, dim_out: int, bias: bool):
+
+        super(GEGLU, self).__init__()
+
+        self.proj = nn.Linear(dim_in, dim_out * 2, bias=bias)
+
+    def forward(self, x: torch.Tensor):
+
+        hidden_states: torch.Tensor = self.proj(x)
+
+        hidden_states, gate = hidden_states.chunk(2, dim=-1)
+
+        return hidden_states * F.gelu(gate)
+
+
+class FeedForward(nn.Module):
+    """
+    Standard MLP Module found in Transformers w/ GeGLU Activation
+    """
+
+    def __init__(
+        self, dim: int, dim_mult: int, mlp_dropout: float = 0.0, bias: bool = True
+    ):
+
+        super(FeedForward, self).__init__()
+
+        hidden_dim = dim * dim_mult
+        self.fc1_geglu = GEGLU(dim, hidden_dim, bias=bias)
+        self.drop = nn.Dropout(mlp_dropout)
+        self.fc2 = nn.Linear(hidden_dim, dim)
+
+    def forward(self, x: torch.Tensor):
+
+        x = self.fc1_geglu(x)
+        x = self.drop(x)
+        x = self.fc2(x)
+
+        return x
+
+
+class BasicTransformerBlock1D(nn.Module):
+    """
+    Standard Transformer Block as Described in Attention is All You Need
+
+    This applies to 1D signals in the shape (B,L,E)
+
+    Args:
+        - embed_dim: Embedding dimension of images (number of channels)
+        - cross_attn_dim: Embedding dimension in for Text (for cross attention)
+        - dim_mult: FeedForward hidden layer projection
+        - attention_head_dim: Embedding dimension for each head of attention
+        - norm_eps: Layer Norm eps
+        - dropout_p: Dropout probability on Attention and FeedForward
+        - attn_bias: Do you want to use bias in QKV Projections
+    """
+
+    def __init__(
+        self,
+        embed_dim: int,
+        cross_attn_dim: Optional[int] = None,
+        dim_mult: int = 4,
+        attention_head_dim: int = 1,
+        norm_eps: float = 1e-6,
+        dropout_p: float = 0.0,
+        attn_bias: bool = True,
+    ):
+
+        super(BasicTransformerBlock1D, self).__init__()
+
+        self.cross_attn_dim = cross_attn_dim
+
+        ### Self-Attention ###
+        self.norm1 = nn.LayerNorm(embed_dim, norm_eps)
+        self.attn1 = Attention(
+            embedding_dimension=embed_dim,
+            cross_attn_dim=None,
+            head_dim=attention_head_dim,
+            attn_dropout=dropout_p,
+            groupnorm_groups=None,
+            attention_residual_connection=False,
+            bias=attn_bias,
+        )
+
+        ### Cross Attention ###
+        if cross_attn_dim is not None:
+            self.norm2 = nn.LayerNorm(embed_dim, norm_eps)
+            self.attn2 = Attention(
+                embedding_dimension=embed_dim,
+                cross_attn_dim=cross_attn_dim,
+                head_dim=attention_head_dim,
+                attn_dropout=dropout_p,
+                groupnorm_groups=None,
+                attention_residual_connection=False,
+                bias=attn_bias,
+            )
+
+        ### FeedForward ###
+        self.norm3 = nn.LayerNorm(embed_dim, norm_eps)
+        self.feedforward = FeedForward(
+            embed_dim, dim_mult=dim_mult, mlp_dropout=dropout_p
+        )
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        context: Optional[torch.Tensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+    ):
+
+        ### Normalize, Self-Attention, Residual Connection ###
+        norm_hidden_states = self.norm1(x)
+        attention_output = self.attn1(norm_hidden_states)
+        x = x + attention_output
+
+        ### Normalize, Cross-Attention, Residual Connection ###
+        if self.cross_attn_dim is not None:
+            if context is None:
+                raise Exception("Not Passing in Context to a Block W Cross Attention")
+
+            norm_hidden_states = self.norm2(x)
+            attention_output = self.attn2(norm_hidden_states, context, attention_mask)
+            x = x + attention_output
+
+        ### Normalize and FeedForward ###
+        norm_hidden_states = self.norm3(x)
+        mlp_out = self.feedforward(norm_hidden_states)
+        x = x + mlp_out
+
+        return x
+
+
 if __name__ == "__main__":
     module = Attention(5, return_shape="2D")
     x = torch.randn(7, 16, 5)
