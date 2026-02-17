@@ -10,3 +10,4 @@ img2dataset
 transformers
 datasets
 matplotlib
+wandb
