@@ -12,8 +12,8 @@ from transformers.optimization import get_scheduler
 import lpips
 
 from modules import VAE, LDMConfig, PatchGAN, LPIPS, init_weights
-from helpers.dataset import get_dataset
-from helpers.utils import (
+from helpers import (
+    get_dataset,
     load_val_images,
     save_orig_and_generated_images,
     count_num_params,

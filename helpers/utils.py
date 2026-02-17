@@ -4,7 +4,7 @@ import torch
 from torch.nn import Module
 import numpy as np
 from PIL import Image
-from dataset import image_transforms
+from .dataset import image_transforms
 from transformers import CLIPTokenizer, CLIPTextModel
 from accelerate import Accelerator
 
