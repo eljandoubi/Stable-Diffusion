@@ -387,8 +387,104 @@ class BasicTransformerBlock1D(nn.Module):
         return x
 
 
-if __name__ == "__main__":
-    module = Attention(5, return_shape="2D")
-    x = torch.randn(7, 16, 5)
-    res = module(x)
-    print(res.shape)
+class TransformerBlock2D(nn.Module):
+    """
+    Wrapper on the TransformerBlock1D
+
+    This applies to 2D signals in the shape (B,C,H,W) and reshapes/projects
+    it to (B,H*W,embed_dim)
+
+    Args:
+        - num_attention_heads: How many heads of attention do you want?
+        - attention_head_dim: What embed dim do you want per head?
+        - in_channels: Number of input channels to the block
+        - cross_attn_dim: Embedding dimension in for Text (for cross attention)
+        - num_layers: How many transformer blocks do you want to stack?
+        - dim_mult: FeedForward hidden layer projection
+        - groupnorm_groups: How many groups in our groupnorm?
+        - attention_bias: Do you want a bias on attention projections?
+        - norm_eps: Layer Norm eps
+        - dropout_p: Dropout probability on Attention and FeedForward
+    """
+
+    def __init__(
+        self,
+        num_attention_heads: int,
+        attention_head_dim: int,
+        in_channels: int,
+        cross_attn_dim: Optional[int] = None,
+        num_layers: int = 1,
+        dim_mult: int = 4,
+        groupnorm_groups: int = 32,
+        attn_bias: bool = False,
+        norm_eps: float = 1e-6,
+        dropout_p: float = 0.0,
+    ):
+
+        super(TransformerBlock2D, self).__init__()
+
+        self.proj_dim = num_attention_heads * attention_head_dim
+
+        self.norm = nn.GroupNorm(
+            num_groups=groupnorm_groups, num_channels=in_channels, eps=norm_eps
+        )
+
+        ### Project to map (B,C,H,W) -> (B,proj_dim,H,W)
+        self.proj_in = nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=self.proj_dim,
+            kernel_size=1,
+            stride=1,
+            padding=0,
+        )
+
+        ### TransformerBlock ###
+        self.transformer = nn.ModuleList(
+            [
+                BasicTransformerBlock1D(
+                    self.proj_dim,
+                    cross_attn_dim=cross_attn_dim,
+                    dim_mult=dim_mult,
+                    attention_head_dim=attention_head_dim,
+                    norm_eps=norm_eps,
+                    dropout_p=dropout_p,
+                    attn_bias=attn_bias,
+                )
+                for _ in range(num_layers)
+            ]
+        )
+
+        ### Project Back to Input Channels ###
+        self.proj_out = nn.Conv2d(
+            in_channels=self.proj_dim,
+            out_channels=in_channels,
+            kernel_size=1,
+            stride=1,
+            padding=0,
+        )
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        context: Optional[torch.Tensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+    ):
+
+        ### Normalize and Project to Wanted Embed Dim ###
+        x = self.norm(x)
+        x = self.proj_in(x)
+
+        ### Flatten to a 1D Signal (B,E,H,W) -> (B,H*W,E) ###
+        x, _ = img2seq(x)
+
+        ### Pass through Transformer ###
+        for block in self.transformer:
+            x = block(x, context, attention_mask)
+
+        ### Return Back To Image Tensor (B,H*W,E) -> (B,E,H,W) ###
+        x = seq2img(x)
+
+        ### Project Back to Input Channels ###
+        x = self.proj_out(x)
+
+        return x
