@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Tuple
 
+import yaml
+
 
 @dataclass
 class LDMConfig:
@@ -92,3 +94,18 @@ class LDMConfig:
     groupnorm_groups: int = 32
     norm_eps: float = 1e-6
     dropout: float = 0.0
+
+    @property
+    def latent_resolution(self) -> int:
+        factor = self.vae_up_down_factor ** (len(self.vae_channels_per_block) - 1)
+        return self.img_size // factor
+
+    @classmethod
+    def from_yaml(cls, path: str) -> "LDMConfig":
+        """Read the vae, unet and diffusion sections of a model config file."""
+        with open(path) as f:
+            sections = yaml.safe_load(f)
+        settings = {}
+        for name in ("vae", "unet", "diffusion"):
+            settings.update(sections.get(name) or {})
+        return cls(**settings)
