@@ -13,6 +13,7 @@ import lpips
 
 from modules import VAE, LDMConfig, PatchGAN, LPIPS, init_weights
 from helpers import (
+    add_common_arguments,
     get_dataset,
     load_val_images,
     save_orig_and_generated_images,
@@ -21,86 +22,7 @@ from helpers import (
 
 
 parser = argparse.ArgumentParser(description="Experiment Configuration")
-
-parser.add_argument(
-    "--experiment_name",
-    help="Name of Experiment being Launched",
-    required=True,
-    type=str,
-    metavar="experiment_name",
-)
-
-parser.add_argument(
-    "--wandb_run_name", required=True, type=str, metavar="wandb_run_name"
-)
-
-parser.add_argument(
-    "--working_directory",
-    help="Working Directory where checkpoints and logs are stored, inside a \
-                    folder labeled by the experiment name",
-    required=True,
-    type=str,
-    metavar="working_directory",
-)
-
-parser.add_argument(
-    "--log_wandb",
-    action=argparse.BooleanOptionalAction,
-    help="Do you want to log to WandB?",
-)
-
-parser.add_argument(
-    "--resume_from_checkpoint",
-    help="Pass name of checkpoint folder to resume training from",
-    default=None,
-    type=str,
-    metavar="resume_from_checkpoint",
-)
-
-parser.add_argument(
-    "--training_config",
-    help="Path to config file for all training information",
-    required=True,
-    type=str,
-    metavar="training_config",
-)
-
-parser.add_argument(
-    "--model_config",
-    help="Path to config file for all model information",
-    required=True,
-    type=str,
-    metavar="model_config",
-)
-
-parser.add_argument(
-    "--dataset",
-    help="What dataset do you want to train on?",
-    choices=(
-        "conceptual_captions",
-        "imagenet",
-        "coco",
-        "celeba",
-        "celebahq",
-        "birds",
-        "ffhd",
-    ),
-    required=True,
-    type=str,
-)
-
-parser.add_argument(
-    "--path_to_dataset", help="Root directory of dataset", required=True, type=str
-)
-
-parser.add_argument(
-    "--path_to_save_gens",
-    help="Folder you want to store the testing generations througout training",
-    required=True,
-    type=str,
-)
-
-
+add_common_arguments(parser)
 args = parser.parse_args()
 
 with open(args.training_config, "r") as f:
@@ -125,7 +47,7 @@ if args.log_wandb:
 
 ### Load Model ###
 model = VAE(config)
-latent_res = config.img_size // (len(config.vae_channels_per_block) - 1) ** 2
+latent_res = config.latent_resolution
 accelerator.print(
     f"LATENT SPACE DIMENSIONS: {config.latent_channels, latent_res, latent_res}"
 )
@@ -145,7 +67,7 @@ use_disc = False
 if training_config["use_patchgan"]:
     use_disc = True
     discriminator = PatchGAN(
-        input_channels=vae_config["in_channels"],
+        input_channels=config.in_channels,
         start_dim=training_config["disc_start_dim"],
         depth=training_config["disc_depth"],
         kernel_size=training_config["disc_kernel_size"],
@@ -185,11 +107,12 @@ mini_batchsize = (
 dataset, collate_fn = get_dataset(
     dataset=args.dataset,
     path_to_data=args.path_to_dataset,
-    num_channels=vae_config["in_channels"],
-    img_size=vae_config["img_size"],
+    num_channels=config.in_channels,
+    img_size=config.img_size,
     random_resize=training_config["random_resize"],
     interpolation=training_config["interpolation"],
     return_caption=False,
+    return_classes=False,
 )
 
 accelerator.print("Number of Training Samples:", len(dataset))
@@ -245,7 +168,7 @@ val_images = None
 if training_config["val_img_folder_path"] is not None:
     val_images = load_val_images(
         path_to_image_folder=training_config["val_img_folder_path"],
-        img_size=vae_config["img_size"],
+        img_size=config.img_size,
         device=accelerator.device,
         dtype=accelerator.mixed_precision,
     )
