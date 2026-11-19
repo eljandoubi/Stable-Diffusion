@@ -6,7 +6,7 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from torchvision.transforms import InterpolationMode
 from transformers import AutoTokenizer
-from datasets import load_from_disk
+from datasets import load_dataset, load_from_disk
 
 from datasets import disable_caching
 
@@ -120,6 +120,30 @@ class GenericImageDataset(Dataset):
             return {"images": img}
 
 
+class HFImageDataset(Dataset):
+    """Images of a Hugging Face dataset, center cropped to a square. Yields {"images": tensor}."""
+
+    def __init__(
+        self,
+        name: str,
+        transform: Callable[[Image.Image], torch.Tensor],
+        split: str = "train",
+    ):
+        self.data = load_dataset(name, split=split)
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx: int):
+        image = self.data[idx]["image"].convert("RGB")
+        side = min(image.size)
+        left = (image.width - side) // 2
+        top = (image.height - side) // 2
+        image = image.crop((left, top, left + side, top + side))
+        return {"images": self.transform(image)}
+
+
 def conceptual_captions(
     path_to_data: str, transforms: Callable[[Image.Image], torch.Tensor]
 ):
@@ -194,7 +218,7 @@ def ConceptualCaptionsCollateFunction(
 
 
 def get_dataset(
-    dataset: Literal["celebahq", "imagenet", "conceptual_captions"],
+    dataset: Literal["celebahq", "imagenet", "conceptual_captions", "hf_images"],
     path_to_data: str,
     num_channels: int = 3,
     img_size: int = 256,
@@ -251,6 +275,15 @@ def get_dataset(
         collate_fn = ConceptualCaptionsCollateFunction(
             model_name=text_encoder_model, pre_encoded_text=pre_encoded_text
         )
+
+    elif dataset == "hf_images":
+        if return_caption or return_classes:
+            raise Exception("hf_images has no captions or classes!")
+
+        trainset = HFImageDataset(path_to_data, img_transform)
+
+        collate_fn = None
+
     else:
         raise ValueError(f"{dataset} is not Supported")
 
