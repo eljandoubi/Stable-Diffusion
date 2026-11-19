@@ -1,7 +1,7 @@
 [project]
 name = "stable-diffusion"
 version = "0.1.0"
-description = "Add your description here"
+description = "Latent diffusion from scratch in PyTorch: VAE, LPIPS, PatchGAN, a cross-attention UNet, a DDIM sampler, trainers and FID evaluation"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
 dependencies = [
@@ -17,3 +17,19 @@ dependencies = [
     "transformers>=5.1.0",
     "wandb>=0.25.0",
 ]
+
+[project.optional-dependencies]
+eval = ["torch-fidelity>=0.3.0"]
+
+[dependency-groups]
+dev = ["pytest>=8.0.0", "ruff>=0.8.0"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
