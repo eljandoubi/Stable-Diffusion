@@ -1,4 +1,4 @@
-uv run accelerate launch --config_file config.yaml vae_trainer.py \
+uv run accelerate launch --config_file accelerate_config.yaml vae_trainer.py \
     --experiment_name VAETrainer \
     --wandb_run_name vae_cc \
     --working_directory work_dir/vae_cc \
