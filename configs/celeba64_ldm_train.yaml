@@ -1,0 +1,31 @@
+training_args:
+
+  vae_checkpoint: work_dir/vae_celeba64/checkpoint_10000   # folder with the VAE model.safetensors
+
+  ### Training Config ###
+  learning_rate: 0.0002
+  lr_scheduler: constant_with_warmup
+  lr_warmup_steps: 500
+  total_training_iterations: 15000
+  checkpoint_iterations: 5000
+  per_gpu_batch_size: 64
+  gradient_accumulations_steps: 1
+  max_grad_norm: 1.0
+  optimizer_beta1: 0.9
+  optimizer_beta2: 0.999
+  optimizer_weight_decay: 0.0
+  ema_decay: 0.999
+  scale_factor_batches: 50                      # batches used to measure the latent standard deviation
+
+  ### Samples during training ###
+  sample_freq: 2500
+  num_samples: 16
+  sample_steps: 50
+  guidance_scale: 1.0
+
+  ### Dataset Config ###
+  pin_memory: False
+  num_workers: 2
+  random_resize: False
+  interpolation: bilinear
+  random_flip_p: 0.5

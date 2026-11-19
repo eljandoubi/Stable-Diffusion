@@ -1,0 +1,45 @@
+training_args:
+
+  ### Discriminator Config (off for this short run) ###
+  use_patchgan: False
+  disc_start_dim: 64
+  disc_depth: 3
+  disc_kernel_size: 4
+  disc_leaky_relu: 0.2
+  disc_learning_rate: 0.00005
+  disc_lr_scheduler: constant_with_warmup
+  disc_lr_warmup_steps: 500
+  disc_start: 1000000
+  disc_weight: 0.5
+
+  ### LPIPS Config ###
+  use_lpips: True
+  use_lpips_package: True                       # the lpips package, which downloads the VGG weights
+  lpips_checkpoint: work_dir/lpips/lpips_64x64_vgg.pt
+  lpips_weight: 0.5
+
+  ### Training Config ###
+  learning_rate: 0.0001
+  lr_scheduler: constant_with_warmup
+  lr_warmup_steps: 500
+  total_training_iterations: 10000
+  checkpoint_iterations: 5000
+  per_gpu_batch_size: 32
+  gradient_accumulations_steps: 1
+  max_grad_norm: 1.0
+  reconstruction_loss_fn: l1
+  kl_weight: 0.000001
+  num_val_random_samples: 8
+  val_img_folder_path: null
+  val_generation_freq: 1500
+  pixelwise_average: True
+  optimizer_beta1: 0.9
+  optimizer_beta2: 0.999
+  optimizer_weight_decay: 0.005
+
+  ### Dataset Config ###
+  pin_memory: False
+  num_workers: 2
+  random_resize: False
+  interpolation: bilinear
+  random_flip_p: 0.0
